@@ -6,5 +6,6 @@ class TestSimple < MiniTest::Unit::TestCase
   def test_simple
     tmpl = Iwakura.new()
     assert_equal tmpl.render_string('helloHello: [% 3+2 %]'), "helloHello: 5"
+    assert_equal tmpl.render_string('helloHello: [% 3-2 %]'), "helloHello: 1"
   end
 end

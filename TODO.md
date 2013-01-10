@@ -2,9 +2,9 @@ TODO
 ====
 
   * syntax
-    * multiply
-    * div
-    * subtract
+    * multiply *
+    * div /
+    * subtract -
     * string literal
     * constant folding
   * cache

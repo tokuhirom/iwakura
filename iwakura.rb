@@ -28,8 +28,10 @@ class Iwakura
             when s.scan(/\+/)
               # expression
               result.push([:TOKEN_PLUS])
+            when s.scan(/\-/)
+              result.push([:TOKEN_MINUS])
             else
-              throw "Unknown expression: #{s}"
+              throw "Unknown token in expression: #{s.inspect}"
             end
           when :normal
             case
@@ -62,7 +64,7 @@ class Iwakura
           when exp = _parse_exp_part()
             ast.push(exp)
           else
-            raise "Unexpected. #{next_token}"
+            raise "Unexpected token in top level. #{next_token}"
           end
         end
         Node.new(:NODE_ROOT, ast)
@@ -108,6 +110,14 @@ class Iwakura
             case
             when m = _parse_primary()
               return Node.new(:NODE_PLUS, [n, m])
+            else
+              raise "Unexpected #{next_token} when expected primary"
+            end
+          when :TOKEN_MINUS
+            use_token
+            case
+            when m = _parse_primary()
+              return Node.new(:NODE_MINUS, [n, m])
             else
               raise "Unexpected #{next_token} when expected primary"
             end
@@ -162,6 +172,7 @@ class Iwakura
   OP_INT       = 3
   OP_PRINT_TOP = 4
   OP_STOP      = 5
+  OP_MINUS     = 6
 
   class CodeGen
     def initialize
@@ -186,6 +197,10 @@ class Iwakura
         generate(node.info[0])
         generate(node.info[1])
         @iseq.push([OP_PLUS])
+      when :NODE_MINUS
+        generate(node.info[1])
+        generate(node.info[0])
+        @iseq.push([OP_MINUS])
       else
         raise "Unknown node: #{node.type}"
       end
@@ -232,6 +247,8 @@ class Iwakura
           @stack.push(@iseq[@pc][1])
         when OP_PLUS
           @stack.push(@stack.pop() + @stack.pop())
+        when OP_MINUS
+          @stack.push(@stack.pop() - @stack.pop())
         when OP_PRINT_RAW
           @result += @iseq[@pc][1]
         when OP_PRINT_TOP
