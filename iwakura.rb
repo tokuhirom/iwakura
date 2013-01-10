@@ -40,7 +40,7 @@ class Iwakura
               result.push([:TOKEN_LEXP])
               @mode = :expression
             when s.scan(/([^\[]+)/)
-              result.push([:TOKEN_STRING, s[1]])
+              result.push([:TOKEN_JI, s[1]])
             end
           end
         end
@@ -74,7 +74,7 @@ class Iwakura
 
       def _parse_ji
         case next_token
-        when :TOKEN_STRING
+        when :TOKEN_JI
           Node.new(:NODE_JI, use_token[1])
         else
           nil
@@ -124,22 +124,23 @@ class Iwakura
       end
 
       def next_token
-        if @tokens.size > @idx+1
-          @tokens[@idx+1][0]
+        if @tokens.size > @idx
+          @tokens[@idx][0]
         else
           nil
         end
       end
 
       def use_token
+        token = @tokens[@idx]
         @idx += 1
-        @tokens[@idx]
+        return token
       end
 
       def _parse_primary
         case next_token
         when :TOKEN_INT
-          Node.new(:NODE_INT, use_token[1])
+          Node.new(:NODE_INT, use_token[1].to_i)
         else
           nil
         end
@@ -155,22 +156,99 @@ class Iwakura
         @type = type
         @info = info
       end
+
+      attr_accessor :type, :info
     end
   end
 
+  OP_PRINT_RAW = 1
+  OP_PLUS      = 2
+  OP_INT       = 3
+  OP_PRINT_TOP = 4
+  OP_STOP      = 5
+
   class CodeGen
+    def initialize
+      @iseq = []
+    end
+
     def generate(node)
-      node[0]
+      case node.type
+      when :NODE_ROOT
+        node.info.each do |e|
+          generate(e)
+        end
+        @iseq.push([OP_STOP])
+      when :NODE_JI
+        @iseq.push([OP_PRINT_RAW, node.info])
+      when :NODE_EXP
+        generate(node.info)
+        @iseq.push([OP_PRINT_TOP])
+      when :NODE_INT
+        @iseq.push([OP_INT, node.info])
+      when :NODE_PLUS
+        generate(node.info[0])
+        generate(node.info[1])
+        @iseq.push([OP_PLUS])
+      else
+        raise "Unknown node: #{node.type}"
+      end
+    end
+
+    attr_accessor :iseq
+  end
+
+  class DisAssembler
+    def self.disasm(iseq)
+      result = []
+      iseq.each do |x|
+        case x[0]
+        when OP_PRINT_RAW
+          result.push "PRINT_RAW #{x[1]}"
+        when OP_PLUS     
+          result.push "PLUS"
+        when OP_INT      
+          result.push "INT"
+        when OP_PRINT_TOP
+          result.push "PRINT_TOP"
+        when OP_STOP     
+          result.push "STOP"
+        end
+      end
+      return result
     end
   end
 
   class VM
-    def initialize
+    def initialize(iseq)
       @pc = 0
+      @iseq = iseq
+      @result = ''
+      @stack = []
     end
 
     def run
+      while true
+        case @iseq[@pc][0]
+        when OP_STOP
+          return
+        when OP_INT
+          @stack.push(@iseq[@pc][1])
+        when OP_PLUS
+          @stack.push(@stack.pop() + @stack.pop())
+        when OP_PRINT_RAW
+          @result += @iseq[@pc][1]
+        when OP_PRINT_TOP
+          @result += @stack.pop().to_s
+        else
+          raise "Unknown OP: #{@iseq[@pc]}"
+        end
+
+        @pc = @pc + 1
+      end
     end
+
+    attr_accessor :result
   end
 
   def initialize(parser=Parser::TT, path=['.'])
@@ -182,7 +260,15 @@ class Iwakura
     @path.each do |dir|
       if File.exists?(File.join(dir, path))
         src = File.read(File.join(dir, path))
-        return @parser.parse(src)
+        ast = @parser.parse(src)
+        generator = CodeGen.new()
+        generator.generate(ast)
+        iseq = generator.iseq
+        p DisAssembler.disasm(iseq)
+        p iseq
+        vm = VM.new(iseq)
+        vm.run
+        return vm.result
       end
     end
 
