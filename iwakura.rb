@@ -50,7 +50,6 @@ class Iwakura
 
       def parse(src)
         tokens = scan(src)
-        p tokens
         @idx = 0
         @tokens = tokens
         return _parse()
@@ -264,8 +263,8 @@ class Iwakura
         generator = CodeGen.new()
         generator.generate(ast)
         iseq = generator.iseq
-        p DisAssembler.disasm(iseq)
-        p iseq
+        # p DisAssembler.disasm(iseq)
+        # p iseq
         vm = VM.new(iseq)
         vm.run
         return vm.result
@@ -273,6 +272,18 @@ class Iwakura
     end
 
     raise "Template file Not Found #{path} in (#{@path.join(",")})"
+  end
+
+  def render_string(src, args={})
+      ast = @parser.parse(src)
+      generator = CodeGen.new()
+      generator.generate(ast)
+      iseq = generator.iseq
+      # p DisAssembler.disasm(iseq)
+      # p iseq
+      vm = VM.new(iseq)
+      vm.run
+      return vm.result
   end
 end
 

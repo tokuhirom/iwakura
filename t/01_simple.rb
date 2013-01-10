@@ -5,6 +5,6 @@ require './iwakura'
 class TestSimple < MiniTest::Unit::TestCase
   def test_simple
     tmpl = Iwakura.new()
-    assert_equal tmpl.render('t/tmpl/foo.tt', {}), "helloHello: 5\n"
+    assert_equal tmpl.render_string('helloHello: [% 3+2 %]'), "helloHello: 5"
   end
 end
