@@ -1,8 +1,5 @@
 require 'rubygems'
-require 'treetop'
 require "strscan"
-
-Treetop.load 'iwakura_grammar'
 
 class Iwakura
   module Parser
