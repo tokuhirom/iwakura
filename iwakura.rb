@@ -102,28 +102,33 @@ class Iwakura
       end
 
       def _parse_additive_exp
+        # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
         case
         when n = _parse_primary()
-          case next_token
-          when :TOKEN_PLUS
-            use_token
-            case
-            when m = _parse_primary()
-              return Node.new(:NODE_PLUS, [n, m])
+          ret = n
+          loop do
+            case next_token
+            when :TOKEN_PLUS
+              use_token
+              case
+              when m = _parse_primary()
+                ret = Node.new(:NODE_PLUS, [ret, m])
+              else
+                raise "Unexpected #{next_token} when expected primary"
+              end
+            when :TOKEN_MINUS
+              use_token
+              case
+              when m = _parse_primary()
+                ret = Node.new(:NODE_MINUS, [ret, m])
+              else
+                raise "Unexpected #{next_token} when expected primary"
+              end
             else
-              raise "Unexpected #{next_token} when expected primary"
+              break
             end
-          when :TOKEN_MINUS
-            use_token
-            case
-            when m = _parse_primary()
-              return Node.new(:NODE_MINUS, [n, m])
-            else
-              raise "Unexpected #{next_token} when expected primary"
-            end
-          else
-            return n
           end
+          return ret
         else
           nil
         end
@@ -218,8 +223,10 @@ class Iwakura
           result.push "PRINT_RAW #{x[1]}"
         when OP_PLUS     
           result.push "PLUS"
+        when OP_MINUS    
+          result.push "MINUS"
         when OP_INT      
-          result.push "INT"
+          result.push "INT #{x[1]}"
         when OP_PRINT_TOP
           result.push "PRINT_TOP"
         when OP_STOP     
@@ -293,12 +300,16 @@ class Iwakura
       generator = CodeGen.new()
       generator.generate(ast)
       iseq = generator.iseq
-      # p DisAssembler.disasm(iseq)
+      if @enable_disasm
+        p DisAssembler.disasm(iseq)
+      end
       # p iseq
       vm = VM.new(iseq)
       vm.run
       return vm.result
   end
+
+  attr_accessor :enable_disasm
 end
 
 tmpl = Iwakura.new()
