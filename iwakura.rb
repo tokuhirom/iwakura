@@ -101,37 +101,36 @@ class Iwakura
         end
       end
 
-      def _parse_additive_exp
-        # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
+      # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
+      def left_op(child, ops)
         case
-        when n = _parse_primary()
-          ret = n
+        when lhs = self.send(child)
+          retval = lhs
+
           loop do
-            case next_token
-            when :TOKEN_PLUS
-              use_token
-              case
-              when m = _parse_primary()
-                ret = Node.new(:NODE_PLUS, [ret, m])
-              else
-                raise "Unexpected #{next_token} when expected primary"
-              end
-            when :TOKEN_MINUS
-              use_token
-              case
-              when m = _parse_primary()
-                ret = Node.new(:NODE_MINUS, [ret, m])
-              else
-                raise "Unexpected #{next_token} when expected primary"
-              end
-            else
-              break
+            op = ops[next_token]
+            break unless op
+
+            use_token # op itself
+
+            rhs = self.send(child)
+            unless rhs
+              raise "Unexpected #{next_token} when expected #{child}"
             end
+
+            retval = Node.new(op, [retval, rhs])
           end
-          return ret
+
+          return retval
         else
           nil
         end
+      end
+
+      def _parse_additive_exp
+        left_op(:_parse_primary,
+                {:TOKEN_PLUS => :NODE_PLUS,
+                 :TOKEN_MINUS => :NODE_MINUS})
       end
 
       def next_token
