@@ -1,6 +1,34 @@
 require 'rubygems'
 require "strscan"
 
+module ParserBase
+    # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
+    def left_op(child, ops)
+      case
+      when lhs = self.send(child)
+        retval = lhs
+
+        loop do
+          op = ops[next_token]
+          break unless op
+
+          use_token # op itself
+
+          rhs = self.send(child)
+          unless rhs
+            raise "Unexpected #{next_token} when expected #{child}"
+          end
+
+          retval = Node.new(op, [retval, rhs])
+        end
+
+        return retval
+      else
+        nil
+      end
+    end
+end
+
 class Iwakura
   module Syntax
     class TT
@@ -13,6 +41,8 @@ class Iwakura
       end
 
       class Parser
+        include ParserBase
+
         def parse(tokens)
           @idx = 0
           @tokens = tokens
@@ -61,32 +91,6 @@ class Iwakura
             else
               raise "Missing exp after [%"
             end
-          else
-            nil
-          end
-        end
-
-        # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
-        def left_op(child, ops)
-          case
-          when lhs = self.send(child)
-            retval = lhs
-
-            loop do
-              op = ops[next_token]
-              break unless op
-
-              use_token # op itself
-
-              rhs = self.send(child)
-              unless rhs
-                raise "Unexpected #{next_token} when expected #{child}"
-              end
-
-              retval = Node.new(op, [retval, rhs])
-            end
-
-            return retval
           else
             nil
           end
