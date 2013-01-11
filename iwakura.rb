@@ -2,181 +2,193 @@ require 'rubygems'
 require "strscan"
 
 class Iwakura
-  module Parser
+  module Syntax
     class TT
-      def initialize
-        @mode = :normal
-      end
-
-      def scan(src)
-        s = StringScanner.new(src)
-
-        result = []
-
-        while !s.eos?
-          case @mode
-          when :expression
-            case
-            when s.scan(/\s+/)
-              # nothing
-            when s.scan(/%\]/)
-              result.push([:TOKEN_REXP])
-              @mode = :normal
-            when s.scan(/([1-9][0-9]*)/)
-              result.push([:TOKEN_INT, s[1]])
-            when s.scan(/\*/)
-              result.push([:TOKEN_MUL])
-            when s.scan(/\+/)
-              result.push([:TOKEN_PLUS])
-            when s.scan(/\//)
-              result.push([:TOKEN_DIV])
-            when s.scan(/\-/)
-              result.push([:TOKEN_MINUS])
-            else
-              throw "Unknown token in expression: #{s.inspect}"
-            end
-          when :normal
-            case
-            when s.scan(/\[\%/)
-              result.push([:TOKEN_LEXP])
-              @mode = :expression
-            when s.scan(/([^\[]+)/)
-              result.push([:TOKEN_JI, s[1]])
-            end
-          end
-        end
-
-        return result
-      end
-
       def parse(src)
-        tokens = scan(src)
-        @idx = 0
-        @tokens = tokens
-        return _parse()
+        scanner = Scanner.new()
+        parser = Parser.new()
+        tokens = scanner.scan(src)
+        ast = parser.parse(tokens)
+        return ast
       end
 
-      def _parse
-        ast = []
-
-        while next_token
-          case
-          when ji = _parse_ji()
-            ast.push(ji)
-          when exp = _parse_exp_part()
-            ast.push(exp)
-          else
-            raise "Unexpected token in top level. #{next_token}"
-          end
+      class Parser
+        def parse(tokens)
+          @idx = 0
+          @tokens = tokens
+          return _parse()
         end
-        Node.new(:NODE_ROOT, ast)
-      end
 
-      def _parse_ji
-        case next_token
-        when :TOKEN_JI
-          Node.new(:NODE_JI, use_token[1])
-        else
-          nil
-        end
-      end
+        def _parse
+          ast = []
 
-      def _parse_exp_part
-        case next_token
-        when :TOKEN_LEXP
-          use_token
-
-          case
-          when exp = _parse_additive_exp()
+          while next_token
             case
-            when :TOKEN_REXP
-              use_token
-              return Node.new(:NODE_EXP, exp)
+            when ji = _parse_ji()
+              ast.push(ji)
+            when exp = _parse_exp_part()
+              ast.push(exp)
             else
-              raise "Missing %] after [%"
+              raise "Unexpected token in top level. #{next_token}"
+            end
+          end
+          Node.new(:NODE_ROOT, ast)
+        end
+
+        def _parse_ji
+          case next_token
+          when :TOKEN_JI
+            Node.new(:NODE_JI, use_token[1])
+          else
+            nil
+          end
+        end
+
+        def _parse_exp_part
+          case next_token
+          when :TOKEN_LEXP
+            use_token
+
+            case
+            when exp = _parse_additive_exp()
+              case
+              when :TOKEN_REXP
+                use_token
+                return Node.new(:NODE_EXP, exp)
+              else
+                raise "Missing %] after [%"
+              end
+            else
+              raise "Missing exp after [%"
             end
           else
-            raise "Missing exp after [%"
+            nil
           end
-        else
-          nil
         end
-      end
 
-      # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
-      def left_op(child, ops)
-        case
-        when lhs = self.send(child)
-          retval = lhs
+        # see http://en.wikipedia.org/wiki/Parsing_expression_grammar#Indirect_left_recursion
+        def left_op(child, ops)
+          case
+          when lhs = self.send(child)
+            retval = lhs
 
-          loop do
-            op = ops[next_token]
-            break unless op
+            loop do
+              op = ops[next_token]
+              break unless op
 
-            use_token # op itself
+              use_token # op itself
 
-            rhs = self.send(child)
-            unless rhs
-              raise "Unexpected #{next_token} when expected #{child}"
+              rhs = self.send(child)
+              unless rhs
+                raise "Unexpected #{next_token} when expected #{child}"
+              end
+
+              retval = Node.new(op, [retval, rhs])
             end
 
-            retval = Node.new(op, [retval, rhs])
+            return retval
+          else
+            nil
+          end
+        end
+
+        def _parse_additive_exp
+          left_op(:_parse_term,
+                  {:TOKEN_PLUS => :NODE_PLUS,
+                  :TOKEN_MINUS => :NODE_MINUS})
+        end
+
+        def _parse_term
+          left_op(:_parse_primary,
+                  {:TOKEN_MUL => :NODE_MUL,
+                  :TOKEN_DIV => :NODE_DIV})
+        end
+
+        def next_token
+          if @tokens.size > @idx
+            @tokens[@idx][0]
+          else
+            nil
+          end
+        end
+
+        def use_token
+          token = @tokens[@idx]
+          @idx += 1
+          return token
+        end
+
+        def _parse_primary
+          case next_token
+          when :TOKEN_INT
+            Node.new(:NODE_INT, use_token[1].to_i)
+          else
+            nil
+          end
+        end
+
+        def primary(tokens)
+          primary[0]
+        end
+      end
+
+      class Scanner
+        def initialize
+        end
+
+        def scan(src)
+          @mode = :normal
+
+          s = StringScanner.new(src)
+
+          result = []
+
+          while !s.eos?
+            case @mode
+            when :expression
+              case
+              when s.scan(/\s+/)
+                # nothing
+              when s.scan(/%\]/)
+                result.push([:TOKEN_REXP])
+                @mode = :normal
+              when s.scan(/([1-9][0-9]*)/)
+                result.push([:TOKEN_INT, s[1]])
+              when s.scan(/\*/)
+                result.push([:TOKEN_MUL])
+              when s.scan(/\+/)
+                result.push([:TOKEN_PLUS])
+              when s.scan(/\//)
+                result.push([:TOKEN_DIV])
+              when s.scan(/\-/)
+                result.push([:TOKEN_MINUS])
+              else
+                throw "Unknown token in expression: #{s.inspect}"
+              end
+            when :normal
+              case
+              when s.scan(/\[\%/)
+                result.push([:TOKEN_LEXP])
+                @mode = :expression
+              when s.scan(/([^\[]+)/)
+                result.push([:TOKEN_JI, s[1]])
+              end
+            end
           end
 
-          return retval
-        else
-          nil
+          return result
         end
-      end
-
-      def _parse_additive_exp
-        left_op(:_parse_term,
-                {:TOKEN_PLUS => :NODE_PLUS,
-                 :TOKEN_MINUS => :NODE_MINUS})
-      end
-
-      def _parse_term
-        left_op(:_parse_primary,
-                {:TOKEN_MUL => :NODE_MUL,
-                 :TOKEN_DIV => :NODE_DIV})
-      end
-
-      def next_token
-        if @tokens.size > @idx
-          @tokens[@idx][0]
-        else
-          nil
-        end
-      end
-
-      def use_token
-        token = @tokens[@idx]
-        @idx += 1
-        return token
-      end
-
-      def _parse_primary
-        case next_token
-        when :TOKEN_INT
-          Node.new(:NODE_INT, use_token[1].to_i)
-        else
-          nil
-        end
-      end
-
-      def primary(tokens)
-        primary[0]
       end
     end
+  end
 
-    class Node
-      def initialize(type, info)
-        @type = type
-        @info = info
-      end
-
-      attr_accessor :type, :info
+  class Node
+    def initialize(type, info)
+      @type = type
+      @info = info
     end
+
+    attr_accessor :type, :info
   end
 
   OP_PRINT_RAW = 1
@@ -296,8 +308,8 @@ class Iwakura
     attr_accessor :result
   end
 
-  def initialize(parser=Parser::TT, path=['.'])
-    @parser = parser.new()
+  def initialize(syntax=Syntax::TT, path=['.'])
+    @syntax = syntax.new()
     @path = path
   end
 
@@ -305,7 +317,7 @@ class Iwakura
     @path.each do |dir|
       if File.exists?(File.join(dir, path))
         src = File.read(File.join(dir, path))
-        ast = @parser.parse(src)
+        ast = @syntax.parse(src)
         generator = CodeGen.new()
         generator.generate(ast)
         iseq = generator.iseq
@@ -321,7 +333,7 @@ class Iwakura
   end
 
   def render_string(src, args={})
-      ast = @parser.parse(src)
+      ast = @syntax.parse(src)
       generator = CodeGen.new()
       generator.generate(ast)
       iseq = generator.iseq
