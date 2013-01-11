@@ -2,8 +2,6 @@ TODO
 ====
 
   * syntax
-    * multiply *
-    * div /
     * string literal
     * constant folding
   * cache

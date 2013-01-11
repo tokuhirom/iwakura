@@ -8,6 +8,8 @@ class TestSimple < MiniTest::Unit::TestCase
     assert_equal tmpl.render_string('helloHello: [% 3+2 %]'), "helloHello: 5"
     assert_equal tmpl.render_string('helloHello: [% 3-2 %]'), "helloHello: 1"
     assert_equal tmpl.render_string('helloHello: [% 3-2-4 %]'), "helloHello: #{3-2-4}"
-    # (- (- 3 2) 4)
+    assert_equal tmpl.render_string('helloHello: [% 3*4*8 %]'), "helloHello: #{3*4*8}"
+    # tmpl.enable_disasm = true
+    assert_equal tmpl.render_string('helloHello: [% 8/2/2 %]'), "helloHello: #{8/2/2}"
   end
 end

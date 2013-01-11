@@ -23,11 +23,13 @@ class Iwakura
               result.push([:TOKEN_REXP])
               @mode = :normal
             when s.scan(/([1-9][0-9]*)/)
-              # expression
               result.push([:TOKEN_INT, s[1]])
+            when s.scan(/\*/)
+              result.push([:TOKEN_MUL])
             when s.scan(/\+/)
-              # expression
               result.push([:TOKEN_PLUS])
+            when s.scan(/\//)
+              result.push([:TOKEN_DIV])
             when s.scan(/\-/)
               result.push([:TOKEN_MINUS])
             else
@@ -128,9 +130,15 @@ class Iwakura
       end
 
       def _parse_additive_exp
-        left_op(:_parse_primary,
+        left_op(:_parse_term,
                 {:TOKEN_PLUS => :NODE_PLUS,
                  :TOKEN_MINUS => :NODE_MINUS})
+      end
+
+      def _parse_term
+        left_op(:_parse_primary,
+                {:TOKEN_MUL => :NODE_MUL,
+                 :TOKEN_DIV => :NODE_DIV})
       end
 
       def next_token
@@ -177,6 +185,8 @@ class Iwakura
   OP_PRINT_TOP = 4
   OP_STOP      = 5
   OP_MINUS     = 6
+  OP_MUL       = 7
+  OP_DIV       = 8
 
   class CodeGen
     def initialize
@@ -197,9 +207,17 @@ class Iwakura
         @iseq.push([OP_PRINT_TOP])
       when :NODE_INT
         @iseq.push([OP_INT, node.info])
-      when :NODE_PLUS
-        generate(node.info[0])
+      when :NODE_DIV
         generate(node.info[1])
+        generate(node.info[0])
+        @iseq.push([OP_DIV])
+      when :NODE_MUL
+        generate(node.info[1])
+        generate(node.info[0])
+        @iseq.push([OP_MUL])
+      when :NODE_PLUS
+        generate(node.info[1])
+        generate(node.info[0])
         @iseq.push([OP_PLUS])
       when :NODE_MINUS
         generate(node.info[1])
@@ -222,6 +240,10 @@ class Iwakura
           result.push "PRINT_RAW #{x[1]}"
         when OP_PLUS     
           result.push "PLUS"
+        when OP_MUL     
+          result.push "MUL"
+        when OP_DIV     
+          result.push "DIV"
         when OP_MINUS    
           result.push "MINUS"
         when OP_INT      
@@ -251,6 +273,10 @@ class Iwakura
           return
         when OP_INT
           @stack.push(@iseq[@pc][1])
+        when OP_MUL
+          @stack.push(@stack.pop() * @stack.pop())
+        when OP_DIV
+          @stack.push(@stack.pop() / @stack.pop())
         when OP_PLUS
           @stack.push(@stack.pop() + @stack.pop())
         when OP_MINUS
