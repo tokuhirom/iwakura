@@ -126,10 +126,6 @@ class Iwakura
             nil
           end
         end
-
-        def primary(tokens)
-          primary[0]
-        end
       end
 
       class Scanner
