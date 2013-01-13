@@ -129,6 +129,26 @@ class Iwakura
               nodes = _parse_body()
               return Node.new(:NODE_IF, [cond, nodes])
             end
+          when next_token == :TOKEN_FOR
+            # [% for ... in ... %]...[% end %]
+            use_token
+
+            raise "No ident after 'for' keyword. #{next_token}" unless next_token == :TOKEN_IDENT
+            exp1 = use_token[1]
+
+            raise "No 'in' keyword in 'for' keyword. #{next_token}" unless next_token == :TOKEN_IN
+            use_token
+
+            exp2 = _parse_additive_exp()
+            raise "No expression after 'for' keyword(2). #{next_token }" unless exp2
+
+            if next_token == :TOKEN_REXP # %]
+              use_token # %]
+              body = _parse_body()
+              return Node.new(:NODE_FOR, [exp1, exp2, body])
+            else
+              raise "no %] after foo."
+            end
           when exp = _parse_additive_exp()
             case
             when :TOKEN_REXP
@@ -194,6 +214,9 @@ class Iwakura
           when :TOKEN_NIL
             use_token
             Node.new(:NODE_NIL)
+          when :TOKEN_IDENT
+            token = use_token
+            return Node.new(:NODE_IDENT, token[1])
           when :TOKEN_LBRACKET
             use_token
             ary = []
@@ -253,6 +276,8 @@ class Iwakura
                 result.push([:TOKEN_IF])
               when s.scan(/for/)
                 result.push([:TOKEN_FOR])
+              when s.scan(/in/)
+                result.push([:TOKEN_IN])
               when s.scan(/while/)
                 result.push([:TOKEN_WHILE])
               when s.scan(/nil/)
@@ -275,6 +300,8 @@ class Iwakura
                 result.push([:TOKEN_DIV])
               when s.scan(/\-/)
                 result.push([:TOKEN_MINUS])
+              when s.scan(/([a-z][a-z0-9]*)/)
+                result.push([:TOKEN_IDENT, s[1]])
               else
                 throw "Unknown token in expression: #{s.inspect}"
               end
@@ -315,6 +342,9 @@ class Iwakura
   OP_NIL           =  9
   OP_JUMP_IF_FALSE = 10
   OP_ARRAY         = 11
+  OP_BEGIN_FOR     = 12
+  OP_CHECK_FOR     = 13
+  OP_IDENT         = 14
 
   class CodeGen
     def initialize
@@ -339,6 +369,8 @@ class Iwakura
         @iseq.push([OP_PRINT_TOP])
       when :NODE_INT
         @iseq.push([OP_INT, node.info])
+      when :NODE_IDENT
+        @iseq.push([OP_IDENT, node.info])
       when :NODE_DIV
         generate(node.info[1])
         generate(node.info[0])
@@ -360,6 +392,16 @@ class Iwakura
         generate(node.info[1])
         generate(node.info[0])
         @iseq.push([OP_MINUS])
+      when :NODE_FOR
+        generate(node.info[1]) # e2
+        jmp = [OP_BEGIN_FOR, [node.info[0]]]
+        @iseq.push(jmp)
+        begin_pt = @iseq.length
+        node.info[2].each do |x|
+          generate(x) # body
+        end
+        @iseq.push([OP_CHECK_FOR, begin_pt])
+        jmp[1][1] = @iseq.length
       when :NODE_IF
         generate(node.info[0]) # expression
         jmp = [OP_JUMP_IF_FALSE]
@@ -377,52 +419,115 @@ class Iwakura
   end
 
   class DisAssembler
+    def self.disasm_one(x)
+      case x[0]
+      when OP_PRINT_RAW
+        "PRINT_RAW #{x[1]}"
+      when OP_NIL
+        "NIL"
+      when OP_PLUS     
+        "PLUS"
+      when OP_MUL     
+        "MUL"
+      when OP_DIV     
+        "DIV"
+      when OP_MINUS    
+        "MINUS"
+      when OP_INT      
+        "INT #{x[1]}"
+      when OP_PRINT_TOP
+        "PRINT_TOP"
+      when OP_STOP     
+        "STOP"
+      when OP_JUMP_IF_FALSE
+        "JUMP_IF_FALSE"
+      when OP_ARRAY
+        "ARRAY: #{x[1]}"
+      when OP_CHECK_FOR
+        "CHECK_FOR: #{x[1]}"
+      when OP_BEGIN_FOR
+        "BEGIN_FOR: #{x[1]}"
+      when OP_IDENT
+        "IDENT: #{x[1]}"
+      else
+        "UNKNOWN: #{x[0]}"
+      end
+    end
+
     def self.disasm(iseq)
       result = []
       iseq.each do |x|
-        case x[0]
-        when OP_PRINT_RAW
-          result.push "PRINT_RAW #{x[1]}"
-        when OP_NIL
-          result.push "NIL"
-        when OP_PLUS     
-          result.push "PLUS"
-        when OP_MUL     
-          result.push "MUL"
-        when OP_DIV     
-          result.push "DIV"
-        when OP_MINUS    
-          result.push "MINUS"
-        when OP_INT      
-          result.push "INT #{x[1]}"
-        when OP_PRINT_TOP
-          result.push "PRINT_TOP"
-        when OP_STOP     
-          result.push "STOP"
-        when OP_JUMP_IF_FALSE
-          result.push "JUMP_IF_FALSE"
-        when OP_ARRAY
-          result.push "ARRAY: #{x[1]}"
-        end
+        result.push self.disasm_one(x)
       end
       return result
     end
   end
 
   class VM
+    class Scope
+      def initialize
+        @data = Hash.new
+      end
+
+      def [](key)
+        @data[key]
+      end
+
+      def []=(key, val)
+        @data[key] = val
+      end
+
+      def has_key?(key)
+        @data.has_key?(key)
+      end
+    end
+
+    class ForScope < Scope
+      def initialize(src, iter)
+        @data = Hash.new
+        @src = src
+        @iter = iter
+        @i = 0
+      end
+
+      def has_next?
+        @i < @src.size
+      end
+
+      def next!
+        @data[@iter] = @src[@i]
+        @i = @i + 1
+        return @data[@iter]
+      end
+
+      attr_accessor :src
+      attr_accessor :iter
+    end
+
     def initialize(iseq)
       @pc = 0
       @iseq = iseq
       @result = ''
       @stack = []
+      @scope_stack  = [
+        Scope.new()
+      ]
     end
 
     def operand
       return @iseq[@pc][1]
     end
 
+    def get_variable(name)
+      @scope_stack.each do |v|
+        return v[name] if v.has_key?(name)
+      end
+      return nil
+    end
+
     def run
       while true
+        puts "#{ @pc } #{DisAssembler.disasm_one(@iseq[@pc]) }"
         case @iseq[@pc][0]
         when OP_STOP
           return
@@ -442,6 +547,26 @@ class Iwakura
           @result += @iseq[@pc][1]
         when OP_PRINT_TOP
           @result += @stack.pop().to_s
+        when OP_IDENT
+          @stack.push(get_variable(operand))
+        when OP_BEGIN_FOR
+          scope = ForScope.new(@stack.pop(), operand[0])
+          if scope.has_next?
+            scope.next!
+            @scope_stack.push(scope)
+          else
+            @pc = operand[1]
+            next
+          end
+        when OP_CHECK_FOR
+          scope = @scope_stack.last()
+          if scope.has_next?
+            scope.next!
+            @pc = operand
+            next
+          else
+            @scope_stack.pop()
+          end
         when OP_ARRAY
           ary = []
           operand.times do
