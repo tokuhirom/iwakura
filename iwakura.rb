@@ -89,6 +89,34 @@ class Iwakura
           end
         end
 
+        def _parse_body
+          nodes = []
+
+          end_ok = false
+
+          while next_token
+            case
+            when ji = _parse_ji()
+              nodes.push(ji)
+              next
+            when ed = _parse_end()
+              end_ok = true
+              break
+            when exp = _parse_exp_part()
+              nodes.push(exp)
+              next
+            else
+              raise "Unexpected token in IF. #{next_token}"
+            end
+          end
+
+          unless end_ok
+            raise "Unexpected EOF in IF."
+          end
+
+          return nodes
+        end
+
         def _parse_if
           case
           when next_token == :TOKEN_IF
@@ -98,37 +126,7 @@ class Iwakura
 
             if next_token == :TOKEN_REXP # %]
               use_token # %]
-
-              nodes = []
-
-              end_ok = false
-
-              while next_token
-                ji = _parse_ji()
-                if ji
-                  nodes.push(ji)
-                  next
-                end
-
-                ed = _parse_end()
-                if ed
-                  end_ok = true
-                  break
-                end
-
-                exp = _parse_exp_part()
-                if exp
-                  nodes.push(exp)
-                  next
-                end
-
-                raise "Unexpected token in IF. #{next_token}"
-              end
-
-              unless end_ok
-                raise "Unexpected EOF in IF."
-              end
-
+              nodes = _parse_body()
               return Node.new(:NODE_IF, [cond, nodes])
             end
           when exp = _parse_additive_exp()
@@ -142,27 +140,6 @@ class Iwakura
           else
             raise "Missing exp after [%"
           end
-        end
-
-        def _parse_exp_and_ji
-          nodes = []
-
-          while next_token
-            case
-            when ji = _parse_ji()
-              nodes.push(ji)
-            when if_ = _parse_if()
-              nodes.push(if_)
-            when _parse_end()
-              break
-            when exp = _parse_exp_part()
-              nodes.push(exp)
-            else
-              raise "Unexpected token in IF. #{next_token}"
-            end
-          end
-
-          return Node.new(:NODE_LINES, [nodes])
         end
 
         def _parse_end
@@ -217,6 +194,35 @@ class Iwakura
           when :TOKEN_NIL
             use_token
             Node.new(:NODE_NIL)
+          when :TOKEN_LBRACKET
+            use_token
+            ary = []
+            # []
+            # [1,2,]
+            # [1,2,3]
+
+            while next_token
+              val = _parse_primary
+              if val.nil?
+                if next_token == :TOKEN_RBRACKET
+                  use_token
+                  return Node.new(:NODE_ARRAY, ary)
+                end
+                raise "Unexpected value: #{next_token}"
+              end
+              ary.push(val)
+
+              if next_token == :TOKEN_COMMA
+                use_token
+                next
+              elsif next_token == :TOKEN_RBRACKET
+                use_token
+                return Node.new(:NODE_ARRAY, ary)
+              else
+                raise "Unexpected token: #{next_token}"
+              end
+            end
+            raise "Unexpected EOF in array literal"
           else
             nil
           end
@@ -251,6 +257,12 @@ class Iwakura
                 result.push([:TOKEN_END])
               when s.scan(/([1-9][0-9]*)/)
                 result.push([:TOKEN_INT, s[1]])
+              when s.scan(/\[/)
+                result.push([:TOKEN_LBRACKET])
+              when s.scan(/\]/)
+                result.push([:TOKEN_RBRACKET])
+              when s.scan(/,/)
+                result.push([:TOKEN_COMMA])
               when s.scan(/\*/)
                 result.push([:TOKEN_MUL])
               when s.scan(/\+/)
@@ -298,6 +310,7 @@ class Iwakura
   OP_DIV           =  8
   OP_NIL           =  9
   OP_JUMP_IF_FALSE = 10
+  OP_ARRAY         = 11
 
   class CodeGen
     def initialize
@@ -334,6 +347,11 @@ class Iwakura
         generate(node.info[1])
         generate(node.info[0])
         @iseq.push([OP_PLUS])
+      when :NODE_ARRAY
+        node.info.reverse.each do |x|
+          generate(x)
+        end
+        @iseq.push([OP_ARRAY, node.info.size])
       when :NODE_MINUS
         generate(node.info[1])
         generate(node.info[0])
@@ -379,6 +397,8 @@ class Iwakura
           result.push "STOP"
         when OP_JUMP_IF_FALSE
           result.push "JUMP_IF_FALSE"
+        when OP_ARRAY
+          result.push "ARRAY: #{x[1]}"
         end
       end
       return result
@@ -391,6 +411,10 @@ class Iwakura
       @iseq = iseq
       @result = ''
       @stack = []
+    end
+
+    def operand
+      return @iseq[@pc][1]
     end
 
     def run
@@ -414,6 +438,12 @@ class Iwakura
           @result += @iseq[@pc][1]
         when OP_PRINT_TOP
           @result += @stack.pop().to_s
+        when OP_ARRAY
+          ary = []
+          operand.times do
+            ary.push(@stack.pop)
+          end
+          @stack.push(ary)
         when OP_JUMP_IF_FALSE
           unless @stack.pop
             @pc = @iseq[@pc][1]

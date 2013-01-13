@@ -22,5 +22,8 @@ class TestSimple < MiniTest::Unit::TestCase
     assert_equal tmpl.render_string('helloHello:[% IF 1 %]e[% IF 3 %]o[% END %]f[% END %]E'), "helloHello:eofE"
     assert_equal tmpl.render_string('helloHello:[% IF 1 %]e[% IF nil %]o[% END %]f[% END %]E'), "helloHello:efE"
     assert_equal tmpl.render_string('helloHello:[% IF nil %]e[% IF 1 %]o[% END %]f[% END %]E'), "helloHello:E"
+    assert_equal tmpl.render_string('[% [1,2,3] %]'), "[1, 2, 3]"
+    assert_equal tmpl.render_string('[% [] %]'), "[]"
+    assert_equal tmpl.render_string('[% [1,] %]'), "[1]"
   end
 end
